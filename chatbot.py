@@ -4,13 +4,10 @@ import socket
 import requests
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from pystyle import Center, Colors, Colorate
 
-
-# ============================================================
-#  1. Fake Web Server for Render (required for free plan)
-# ============================================================
-
+# ------------------------------
+# 1. Fake Web Server for Render
+# ------------------------------
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -23,13 +20,13 @@ def start_web_server():
     print(f"[WEB] Fake web server started on port {port}")
     server.serve_forever()
 
+# Запускаем веб-сервер в отдельном потоке
 threading.Thread(target=start_web_server, daemon=True).start()
 
 
-# ============================================================
-#  2. Announcement Printing
-# ============================================================
-
+# ------------------------------
+# 2. Announcement (опционально)
+# ------------------------------
 def print_announcement():
     try:
         url = "https://raw.githubusercontent.com/Kichi779/Twitch-Chat-Bot/main/announcement.txt"
@@ -38,110 +35,123 @@ def print_announcement():
     except:
         return ""
 
-
-print(Colorate.Vertical(Colors.red_to_yellow, Center.XCenter("""
-Twitch Chat Bot starting on Render...
-""")))
-
 announcement = print_announcement()
-print("\nANNOUNCEMENT:")
-print(announcement)
-print("\n")
+if announcement:
+    print("[ANNOUNCEMENT]")
+    print(announcement)
+    print()
 
 
-# ============================================================
-#  3. Load settings from Environment Variables
-# ============================================================
+# ------------------------------
+# 3. Settings from Environment Variables
+# ------------------------------
+TWITCH_CHANNEL = os.getenv("TWITCH_CHANNEL")
+BOT_MODE = os.getenv("BOT_MODE")         # "1" или "2"
+MESSAGE_INTERVAL = os.getenv("MESSAGE_INTERVAL") # сек, для режима 1
+MESSAGE_TEXT = os.getenv("MESSAGE_TEXT")         # для режима 2
+BOT_CHOICE = os.getenv("BOT_CHOICE")             # для режима 2
 
-channel = os.getenv("TWITCH_CHANNEL")
-mode = os.getenv("BOT_MODE")             # "1" or "2"
-interval = os.getenv("MESSAGE_INTERVAL") # required if mode 1
-message_env = os.getenv("MESSAGE_TEXT")  # required if mode 2
-bot_choice_env = os.getenv("BOT_CHOICE") # index if mode 2
-
-if not channel:
-    raise Exception("Environment variable TWITCH_CHANNEL not set")
-
-if mode not in ["1", "2"]:
-    raise Exception("Environment variable BOT_MODE must be '1' or '2'")
+if not TWITCH_CHANNEL:
+    raise Exception("TWITCH_CHANNEL not set")
+if BOT_MODE not in ["1", "2"]:
+    raise Exception("BOT_MODE must be '1' or '2'")
 
 
-server = "irc.chat.twitch.tv"
-port = 6667
+# ------------------------------
+# 4. IRC Settings
+# ------------------------------
+IRC_SERVER = "irc.chat.twitch.tv"
+IRC_PORT = 6667
 
 
-# ============================================================
-#  4. MODE 1 — automatic messages from messages.txt
-# ============================================================
+# ------------------------------
+# 5. Bot loop function
+# ------------------------------
+def bot_loop():
+    if BOT_MODE == "1":
+        # ----------------- Mode 1 -----------------
+        if not MESSAGE_INTERVAL:
+            MESSAGE_INTERVAL = 20
+        else:
+            MESSAGE_INTERVAL = int(MESSAGE_INTERVAL)
 
-if mode == "1":
-    with open("messages.txt", "r") as f:
-        messages = [m.strip() for m in f.readlines()]
+        # Load messages
+        with open("messages.txt", "r") as f:
+            messages = [m.strip() for m in f.readlines()]
 
-    interval = int(interval) if interval else 20
-    index = 0
-
-    print(f"[MODE 1] Sending messages every {interval} seconds")
-    print(f"[CHANNEL] {channel}")
-
-    while True:
-        message = messages[index % len(messages)]
-        index += 1
-
+        # Load oauths
         with open("oauths.txt", "r") as f:
             oauths = [x.strip() for x in f.readlines()]
 
-        oauth = oauths[index % len(oauths)]
+        index = 0
+        print(f"[BOT] Mode 1 started. Sending messages every {MESSAGE_INTERVAL}s to channel {TWITCH_CHANNEL}")
 
-        print(f"[{time.strftime('%X')}] Sending: {message}")
+        while True:
+            message = messages[index % len(messages)]
+            oauth = oauths[index % len(oauths)]
+            nickname = f"bot_{index % len(oauths) + 1}"
 
-        irc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        irc.connect((server, port))
-        irc.send(f"PASS {oauth}\n".encode())
-        irc.send(f"NICK bot\n".encode())
-        irc.send(f"JOIN #{channel}\n".encode())
-        irc.send(f"PRIVMSG #{channel} :{message}\n".encode())
-        irc.close()
+            print(f"[{time.strftime('%X')}] Sending message: '{message}' using {nickname}")
 
-        time.sleep(interval)
+            try:
+                irc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                irc.connect((IRC_SERVER, IRC_PORT))
+                irc.send(f"PASS {oauth}\n".encode())
+                irc.send(f"NICK {nickname}\n".encode())
+                irc.send(f"JOIN #{TWITCH_CHANNEL}\n".encode())
+                irc.send(f"PRIVMSG #{TWITCH_CHANNEL} :{message}\n".encode())
+                irc.close()
+            except Exception as e:
+                print(f"[ERROR] Failed to send message: {e}")
+
+            index += 1
+            time.sleep(MESSAGE_INTERVAL)
+
+    else:
+        # ----------------- Mode 2 -----------------
+        if not MESSAGE_TEXT or not BOT_CHOICE:
+            raise Exception("MESSAGE_TEXT and BOT_CHOICE are required for BOT_MODE=2")
+
+        bot_index = int(BOT_CHOICE) - 1
+
+        # Load oauths
+        with open("oauths.txt", "r") as f:
+            oauths = [x.strip() for x in f.readlines()]
+
+        if bot_index >= len(oauths):
+            raise Exception("BOT_CHOICE larger than number of oauths available")
+
+        oauth = oauths[bot_index]
+        nickname = f"bot_{bot_index+1}"
+        message = MESSAGE_TEXT
+
+        print(f"[BOT] Mode 2 started. Sending message once to channel {TWITCH_CHANNEL} using {nickname}")
+        print(f"[{time.strftime('%X')}] Message: '{message}'")
+
+        try:
+            irc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            irc.connect((IRC_SERVER, IRC_PORT))
+            irc.send(f"PASS {oauth}\n".encode())
+            irc.send(f"NICK {nickname}\n".encode())
+            irc.send(f"JOIN #{TWITCH_CHANNEL}\n".encode())
+            irc.send(f"PRIVMSG #{TWITCH_CHANNEL} :{message}\n".encode())
+            irc.close()
+            print("[BOT] Message sent successfully")
+        except Exception as e:
+            print(f"[ERROR] Failed to send message: {e}")
+
+        # Держим бот живым
+        while True:
+            time.sleep(999999)
 
 
-# ============================================================
-#  5. MODE 2 — send a single custom message using selected bot
-# ============================================================
+# ------------------------------
+# 6. Start bot loop in separate thread
+# ------------------------------
+threading.Thread(target=bot_loop, daemon=True).start()
 
-elif mode == "2":
-    if not message_env:
-        raise Exception("MESSAGE_TEXT is required for BOT_MODE = 2")
-
-    if not bot_choice_env:
-        raise Exception("BOT_CHOICE is required for BOT_MODE = 2")
-
-    bot_index = int(bot_choice_env) - 1
-
-    with open("oauths.txt", "r") as f:
-        oauths = [x.strip() for x in f.readlines()]
-
-    if bot_index >= len(oauths):
-        raise Exception("BOT_CHOICE is bigger than number of bots in oauths.txt")
-
-    oauth = oauths[bot_index]
-    nickname = f"bot_{bot_index+1}"
-    message = message_env
-
-    print(f"[MODE 2] Sending single message")
-    print(f"[CHANNEL] {channel}")
-    print(f"[BOT] {nickname}")
-    print(f"[MESSAGE] {message}")
-
-    irc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    irc.connect((server, port))
-    irc.send(f"PASS {oauth}\n".encode())
-    irc.send(f"NICK {nickname}\n".encode())
-    irc.send(f"JOIN #{channel}\n".encode())
-    irc.send(f"PRIVMSG #{channel} :{message}\n".encode())
-    irc.close()
-
-    print("[DONE] Message sent. Bot will stay alive to keep Render active.")
-    while True:
-        time.sleep(999999)
+# ------------------------------
+# 7. Keep main thread alive for Render
+# ------------------------------
+while True:
+    time.sleep(9999)
