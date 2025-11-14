@@ -20,12 +20,11 @@ def start_web_server():
     print(f"[WEB] Fake web server started on port {port}")
     server.serve_forever()
 
-# Запускаем веб-сервер в отдельном потоке
 threading.Thread(target=start_web_server, daemon=True).start()
 
 
 # ------------------------------
-# 2. Announcement (опционально)
+# 2. Announcement (optional)
 # ------------------------------
 def print_announcement():
     try:
@@ -46,10 +45,10 @@ if announcement:
 # 3. Settings from Environment Variables
 # ------------------------------
 TWITCH_CHANNEL = os.getenv("TWITCH_CHANNEL")
-BOT_MODE = os.getenv("BOT_MODE")         # "1" или "2"
-MESSAGE_INTERVAL = os.getenv("MESSAGE_INTERVAL") # сек, для режима 1
-MESSAGE_TEXT = os.getenv("MESSAGE_TEXT")         # для режима 2
-BOT_CHOICE = os.getenv("BOT_CHOICE")             # для режима 2
+BOT_MODE = os.getenv("BOT_MODE")         # "1" or "2"
+MESSAGE_INTERVAL = os.getenv("MESSAGE_INTERVAL") # for mode 1
+MESSAGE_TEXT = os.getenv("MESSAGE_TEXT")         # for mode 2
+BOT_CHOICE = os.getenv("BOT_CHOICE")             # for mode 2
 
 if not TWITCH_CHANNEL:
     raise Exception("TWITCH_CHANNEL not set")
@@ -70,10 +69,7 @@ IRC_PORT = 6667
 def bot_loop():
     if BOT_MODE == "1":
         # ----------------- Mode 1 -----------------
-        if not MESSAGE_INTERVAL:
-            MESSAGE_INTERVAL = 20
-        else:
-            MESSAGE_INTERVAL = int(MESSAGE_INTERVAL)
+        interval = int(MESSAGE_INTERVAL) if MESSAGE_INTERVAL else 20
 
         # Load messages
         with open("messages.txt", "r") as f:
@@ -84,7 +80,7 @@ def bot_loop():
             oauths = [x.strip() for x in f.readlines()]
 
         index = 0
-        print(f"[BOT] Mode 1 started. Sending messages every {MESSAGE_INTERVAL}s to channel {TWITCH_CHANNEL}")
+        print(f"[BOT] Mode 1 started. Sending messages every {interval}s to channel {TWITCH_CHANNEL}")
 
         while True:
             message = messages[index % len(messages)]
@@ -105,7 +101,7 @@ def bot_loop():
                 print(f"[ERROR] Failed to send message: {e}")
 
             index += 1
-            time.sleep(MESSAGE_INTERVAL)
+            time.sleep(interval)
 
     else:
         # ----------------- Mode 2 -----------------
@@ -140,7 +136,7 @@ def bot_loop():
         except Exception as e:
             print(f"[ERROR] Failed to send message: {e}")
 
-        # Держим бот живым
+        # Keep bot alive for Render
         while True:
             time.sleep(999999)
 
@@ -149,6 +145,7 @@ def bot_loop():
 # 6. Start bot loop in separate thread
 # ------------------------------
 threading.Thread(target=bot_loop, daemon=True).start()
+
 
 # ------------------------------
 # 7. Keep main thread alive for Render
